@@ -1,6 +1,7 @@
 package org.hs.speed.metrics.utils.dto;
 
 import java.util.List;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -17,6 +18,8 @@ public class MachineMetricsResponseDto {
     @Getter
     @Setter
     @NoArgsConstructor
+    @Builder
+    @AllArgsConstructor
     public static class ParameterMetric {
         private String parameter;
         private List<Metrics> metrics;

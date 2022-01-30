@@ -28,12 +28,26 @@ public class MachineParametersService {
     @Autowired
     private MachineParametersRepository machineParametersRepository;
 
+    /***
+     * Store MachineParameter object in Database
+     * 
+     * @param machineParameters: MachineParameter object
+     * @return stored MachineParameter object
+     */
     public MachineParameters save(MachineParameters machineParameters) {
         machineParameters.setId(UUID.randomUUID().toString());
         machineParameters.setCreatedAt(new Date());
         return machineParametersRepository.save(machineParameters);
     }
 
+    /***
+     * Find `MachineKeyParameter` objects of given `machineKey` 
+     * and stored within past `nMinutes`
+     * 
+     * @param machineKey: machine key in String format
+     * @param nMinutes: past n minutes in Integer format
+     * @return
+     */
     public List<MachineParameters> findMachineKeyOfPastNMinutes(String machineKey,
             Integer nMinutes) {
         Date nMinutesBefore = DateUtils.addMinutes(new Date(), (-1) * nMinutes);
@@ -41,50 +55,36 @@ public class MachineParametersService {
                 nMinutesBefore);
     }
 
+    /***
+     * calculate metrics of parameters of given machine key
+     * 
+     * @param machineKey: machine key in String format
+     * @param machines: List of MachineParameters objects
+     * @return returns the metric values in MachineMetricsResponseDto format
+     */
     public MachineMetricsResponseDto calculateMetrics(String machineKey,
             List<MachineParameters> machines) {
+
         Map<String, List<MachineParameters>> parametersGroupByMachineKey =
                 machines.stream().collect(Collectors.groupingBy(MachineParameters::getMachineKey));
 
         List<ParameterMetric> parameterMetrics = new ArrayList<ParameterMetric>();
         parametersGroupByMachineKey.forEach((mKey, parameterList) -> {
 
-            Map<String, List<Entry<String, Double>>> parameterGroupByParameterKey = parameterList.stream()
+            Map<String, List<Entry<String, Double>>> parametersGroupByParameterKey = parameterList.stream()
                     .map(mc -> mc.getParameters().entrySet().stream().collect(Collectors.toList()))
                     .flatMap(Collection::stream)
                     .collect(Collectors.groupingBy(Entry<String, Double>::getKey));
 
-            parameterGroupByParameterKey.forEach((key, value) -> {
-                ParameterMetric parameterMetric = new ParameterMetric();
+            parametersGroupByParameterKey.forEach((key, value) -> {
                 List<Metrics> metrics = new ArrayList<Metrics>();
-                Optional<Entry<String, Double>> min =
-                        value.stream().min(Comparator.comparing(Entry<String, Double>::getValue));
-                min.ifPresent(val -> metrics.add(Metrics.builder()
-                        .metric(Constants.METRIC_MIN).value(val.getValue()).build()));
 
-                Optional<Entry<String, Double>> max =
-                        value.stream().max(Comparator.comparing(Entry<String, Double>::getValue));
-                max.ifPresent(val -> metrics.add(Metrics.builder()
-                        .metric(Constants.METRIC_MAX).value(val.getValue()).build()));
+                calculateMinAndAppendToMetric(value, metrics);
+                calculateMaxAndAppendToMetric(value, metrics);
+                calculateAvgAndAppendToMetric(value, metrics);
+                calculateMedianAndAppendToMetric(value, metrics);
 
-
-                OptionalDouble average =
-                        value.stream().mapToDouble(Entry<String, Double>::getValue).average();
-                average.ifPresent(val -> metrics.add(Metrics.builder()
-                        .metric(Constants.METRIC_AVERAGE).value(val).build()));
-
-                DoubleStream sorted =
-                        value.stream().mapToDouble(Entry<String, Double>::getValue).sorted();
-                double median = value.size() % 2 == 0
-                        ? sorted.skip(value.size() / 2 - 1).limit(2).average().getAsDouble()
-                        : sorted.skip(value.size() / 2).findFirst().getAsDouble();
-                metrics.add(Metrics.builder()
-                        .metric(Constants.METRIC_MEDIAN).value(median).build());
-
-                parameterMetric.setMetrics(metrics);
-                parameterMetric.setParameter(key);
-
-                parameterMetrics.add(parameterMetric);
+                parameterMetrics.add(ParameterMetric.builder().parameter(key).metrics(metrics).build());
             });
         });
 
@@ -93,15 +93,29 @@ public class MachineParametersService {
                 .build();
     }
 
-    private void calculateAndStoreMinOfParameters(List<Entry<String, Double>> value,
+    /***
+     * Calculate min of values of a given list of Entry objects
+     * and append the result in the given list of `Metrics`
+     * 
+     * @param value: List of entry objects
+     * @param metrics: Already created List containing Metrics object
+     */
+    private void calculateMinAndAppendToMetric(List<Entry<String, Double>> value,
             List<Metrics> metrics) {
         Optional<Entry<String, Double>> min =
                 value.stream().min(Comparator.comparing(Entry<String, Double>::getValue));
         min.ifPresent(val -> metrics
                 .add(Metrics.builder().metric(Constants.METRIC_MIN).value(val.getValue()).build()));
     }
-
-    private void calculateAndStoreMaxOfParameters(List<Entry<String, Double>> value,
+    
+    /***
+     * Calculate max of values of a given list of Entry objects
+     * and append the result in the given list of `Metrics`
+     * 
+     * @param value: List of entry objects
+     * @param metrics: Already created List containing Metrics object
+     */
+    private void calculateMaxAndAppendToMetric(List<Entry<String, Double>> value,
             List<Metrics> metrics) {
         Optional<Entry<String, Double>> max =
                 value.stream().max(Comparator.comparing(Entry<String, Double>::getValue));
@@ -109,7 +123,14 @@ public class MachineParametersService {
                 .add(Metrics.builder().metric(Constants.METRIC_MAX).value(val.getValue()).build()));
     }
 
-    private void calculateAndStoreAvgOfParameters(List<Entry<String, Double>> value,
+    /***
+     * Calculate avg of values of a given list of Entry objects
+     * and append the result in the given list of `Metrics`
+     * 
+     * @param value: List of entry objects
+     * @param metrics: Already created List containing Metrics object
+     */
+    private void calculateAvgAndAppendToMetric(List<Entry<String, Double>> value,
             List<Metrics> metrics) {
         OptionalDouble average =
                 value.stream().mapToDouble(Entry<String, Double>::getValue).average();
@@ -117,7 +138,14 @@ public class MachineParametersService {
                 .add(Metrics.builder().metric(Constants.METRIC_AVERAGE).value(val).build()));
     }
 
-    private void calculateAndStoreMedianOfParameters(List<Entry<String, Double>> value,
+    /***
+     * Calculate median of values of a given list of Entry objects
+     * and append the result in the given list of `Metrics`
+     * 
+     * @param value: List of entry objects
+     * @param metrics: Already created List containing Metrics object
+     */
+    private void calculateMedianAndAppendToMetric(List<Entry<String, Double>> value,
             List<Metrics> metrics) {
         DoubleStream sorted = value.stream().mapToDouble(Entry<String, Double>::getValue).sorted();
         double median = value.size() % 2 == 0
