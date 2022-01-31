@@ -1,6 +1,7 @@
 ### Project
 
-Store machine parameters and calculate different metrics (average, median, min, max) of a time limit.
+This project stores machine parameters and calculates different metrics of them (average, median, min, max) within a time limit.
+
 The project has been developed using spring cloud function. Data is stored in mongodb. All deployment has been managed by docker-compose.
 
 ### Dependency
