@@ -16,10 +16,15 @@ import org.apache.commons.lang3.time.DateUtils;
 import org.hs.speed.metrics.models.MachineParameters;
 import org.hs.speed.metrics.repositories.MachineParametersRepository;
 import org.hs.speed.metrics.utils.Constants;
+import org.hs.speed.metrics.utils.dto.AggrOfLatestParametersOfMachineDto;
+import org.hs.speed.metrics.utils.dto.MachineLatestParametersResponseDto;
 import org.hs.speed.metrics.utils.dto.MachineMetricsResponseDto;
 import org.hs.speed.metrics.utils.dto.MachineMetricsResponseDto.Metrics;
 import org.hs.speed.metrics.utils.dto.MachineMetricsResponseDto.ParameterMetric;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -27,6 +32,8 @@ public class MachineParametersService {
 
     @Autowired
     private MachineParametersRepository machineParametersRepository;
+    @Autowired
+    private MongoTemplate mongoTemplate;
 
     /***
      * Store MachineParameter object in Database
@@ -41,8 +48,7 @@ public class MachineParametersService {
     }
 
     /***
-     * Find `MachineKeyParameter` objects of given `machineKey` 
-     * and stored within past `nMinutes`
+     * Find `MachineKeyParameter` objects of given `machineKey` and stored within past `nMinutes`
      * 
      * @param machineKey: machine key in String format
      * @param nMinutes: past n minutes in Integer format
@@ -71,7 +77,8 @@ public class MachineParametersService {
         List<ParameterMetric> parameterMetrics = new ArrayList<ParameterMetric>();
         parametersGroupByMachineKey.forEach((mKey, parameterList) -> {
 
-            Map<String, List<Entry<String, Double>>> parametersGroupByParameterKey = parameterList.stream()
+            Map<String, List<Entry<String, Double>>> parametersGroupByParameterKey = parameterList
+                    .stream()
                     .map(mc -> mc.getParameters().entrySet().stream().collect(Collectors.toList()))
                     .flatMap(Collection::stream)
                     .collect(Collectors.groupingBy(Entry<String, Double>::getKey));
@@ -84,18 +91,18 @@ public class MachineParametersService {
                 calculateAvgAndAppendToMetric(value, metrics);
                 calculateMedianAndAppendToMetric(value, metrics);
 
-                parameterMetrics.add(ParameterMetric.builder().parameter(key).metrics(metrics).build());
+                parameterMetrics
+                        .add(ParameterMetric.builder().parameter(key).metrics(metrics).build());
             });
         });
 
         return MachineMetricsResponseDto.builder().machineKey(machineKey)
-                .parameterMetrics(parameterMetrics)
-                .build();
+                .parameterMetrics(parameterMetrics).build();
     }
 
     /***
-     * Calculate min of values of a given list of Entry objects
-     * and append the result in the given list of `Metrics`
+     * Calculate min of values of a given list of Entry objects and append the result in the given
+     * list of `Metrics`
      * 
      * @param value: List of entry objects
      * @param metrics: Already created List containing Metrics object
@@ -107,10 +114,10 @@ public class MachineParametersService {
         min.ifPresent(val -> metrics
                 .add(Metrics.builder().metric(Constants.METRIC_MIN).value(val.getValue()).build()));
     }
-    
+
     /***
-     * Calculate max of values of a given list of Entry objects
-     * and append the result in the given list of `Metrics`
+     * Calculate max of values of a given list of Entry objects and append the result in the given
+     * list of `Metrics`
      * 
      * @param value: List of entry objects
      * @param metrics: Already created List containing Metrics object
@@ -124,8 +131,8 @@ public class MachineParametersService {
     }
 
     /***
-     * Calculate avg of values of a given list of Entry objects
-     * and append the result in the given list of `Metrics`
+     * Calculate avg of values of a given list of Entry objects and append the result in the given
+     * list of `Metrics`
      * 
      * @param value: List of entry objects
      * @param metrics: Already created List containing Metrics object
@@ -139,8 +146,8 @@ public class MachineParametersService {
     }
 
     /***
-     * Calculate median of values of a given list of Entry objects
-     * and append the result in the given list of `Metrics`
+     * Calculate median of values of a given list of Entry objects and append the result in the
+     * given list of `Metrics`
      * 
      * @param value: List of entry objects
      * @param metrics: Already created List containing Metrics object
@@ -152,5 +159,37 @@ public class MachineParametersService {
                 ? sorted.skip(value.size() / 2 - 1).limit(2).average().getAsDouble()
                 : sorted.skip(value.size() / 2).findFirst().getAsDouble();
         metrics.add(Metrics.builder().metric(Constants.METRIC_MEDIAN).value(median).build());
+    }
+
+    /***
+     * Get the latest parameters of machines
+     * 
+     * @return Latest parameters of machines
+     */
+    public List<MachineLatestParametersResponseDto> latestParameters() {
+        Aggregation aggregation = Aggregation.newAggregation(
+                        Aggregation.sort(Sort.Direction.DESC, MachineParameters.ATTR_CREATED_AT),
+                        Aggregation.group(MachineParameters.ATTR_MACHINE_KEY)
+                        .first(MachineParameters.ATTR_PARAMETERS)
+                        .as(MachineParameters.ATTR_PARAMETERS));
+
+        List<AggrOfLatestParametersOfMachineDto> latestMachineParameters =
+                mongoTemplate.aggregate(aggregation, Constants.MACHINE_PARAMETER_DOCUMENT,
+                        AggrOfLatestParametersOfMachineDto.class)
+                        .getMappedResults();
+
+        List<MachineLatestParametersResponseDto> resultParameters =
+                new ArrayList<MachineLatestParametersResponseDto>();
+
+        latestMachineParameters.forEach(mk -> {
+            List<String> parameters = mk.getParameters().entrySet().stream()
+                    .map(Entry<String, Double>::getKey).collect(Collectors.toList());
+
+            MachineLatestParametersResponseDto machineLatestParameter =
+                    MachineLatestParametersResponseDto.builder().machineKey(mk.getId())
+                            .parameters(parameters).build();
+            resultParameters.add(machineLatestParameter);
+        });
+        return resultParameters;
     }
 }
